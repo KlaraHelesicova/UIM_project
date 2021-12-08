@@ -3,76 +3,75 @@ import pandas as pd
 from sklearn import preprocessing
 from sklearn.neural_network import MLPClassifier
 
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 
-df = pd.read_csv('dataSepsis.csv', delimiter=';', usecols=[*range(0, 35), 38, 39])
-d_gender = pd.read_csv('dataSepsis.csv', delimiter=';', usecols=["Gender"])
-d_isSepsis = pd.read_csv('dataSepsis.csv', delimiter=';', usecols=["isSepsis"])
-df.describe().transpose()
 
-median = df.median()
-std = df.std()
-outliers = (df - median).abs() > std
-df[outliers] = np.nan
-df.fillna(median, inplace=True)
-
-x = df.values
-min_max_scaler = preprocessing.MinMaxScaler()
-x_scaled = min_max_scaler.fit_transform(df)
-df = pd.DataFrame(x_scaled)
-
-d_gender = d_gender.values # diky tomuto nahore neni Gender, ale 0
-d_gender = pd.DataFrame(d_gender) # na tomhle nezalezi concat
-d_isSepsis = pd.DataFrame(d_isSepsis)
-
-df['Gender'] = d_gender
-df['isSepsis'] = d_isSepsis
-result = df
+def load_data(name_file):
+    data = pd.read_csv(name_file, delimiter=';', usecols=[*range(0, 35), 38, 39])
+    data_gender = pd.read_csv(name_file, delimiter=';', usecols=["Gender"])
+    data_isSepsis = pd.read_csv(name_file, delimiter=';', usecols=["isSepsis"])
+    data.describe().transpose()
+    return data, data_gender, data_isSepsis
 
 
-target_column = ['isSepsis']
-predictors = list(set(list(result.columns))-set(target_column))
-result[predictors] = result[predictors]/result[predictors].max()
-result.describe().transpose()
-
-X = result[predictors].values
-y = df[target_column].values.ravel()
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.80, random_state=40)
-print(X_train.shape)
-print(X_test.shape)
-
-mlp = MLPClassifier(hidden_layer_sizes=(8, 8, 8), activation='relu', solver='adam', max_iter=500)
-mlp.fit(X_train, y_train)
-
-predict_train = mlp.predict(X_train)
-predict_test = mlp.predict(X_test)
+def erase_nan(data):
+    median = data.median()
+    std = data.std()
+    outliers = (data - median).abs() > std
+    data[outliers] = np.nan
+    data.fillna(median, inplace=True)
+    return data
 
 
-print(confusion_matrix(y_train, predict_train))
-print(classification_report(y_train, predict_train))
+def scale_data(data, d_gender, d_isSepsis):
+    data = data.values
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(data)
+    scaled_data = pd.DataFrame(x_scaled)
+    d_gender = d_gender.values # diky tomuto nahore neni Gender, ale 0
+    d_gender = pd.DataFrame(d_gender)
+    d_isSepsis = pd.DataFrame(d_isSepsis)
+    scaled_data['Gender'] = d_gender
+    scaled_data['isSepsis'] = d_isSepsis
+    return scaled_data
 
 
-FP = confusion_matrix(y_train, predict_train).sum(axis=0) - np.diag(confusion_matrix(y_train, predict_train))
-FN = confusion_matrix(y_train, predict_train).sum(axis=1) - np.diag(confusion_matrix(y_train, predict_train))
-TP = np.diag(confusion_matrix(y_train, predict_train))
-TN = confusion_matrix(y_train, predict_train).sum() - (FP + FN + TP)
+def neural_network(result):
+    target_column = ['isSepsis']
+    predictors = list(set(list(result.columns))-set(target_column))
+    result[predictors] = result[predictors]/result[predictors].max()
+    result.describe().transpose()
 
-Se = TP/(TP+FN)
-Sp = TN/(TN+FP)
-PPV = TP/(TP+FP)
-ACC = (TP+TN)/(TP+FP+FN+TN)
-print(Se, Sp, PPV, ACC)
+    X = result[predictors].values
+    y = result[target_column].values.ravel()
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+    print(X_train.shape)
+    print(X_test.shape)
+
+    mlp = MLPClassifier(activation='relu', solver='adam', max_iter=500)
+    mlp.fit(X_train, y_train)
+
+    predict_train = mlp.predict(X_train)
+    predict_test = mlp.predict(X_test)
+
+    print(confusion_matrix(y_train, predict_train))
+    print(classification_report(y_train, predict_train))
+    print(get_measure(y_train, predict_train))
+
+    print(confusion_matrix(y_test, predict_test))
+    print(classification_report(y_test, predict_test))
+    print(get_measure(y_test, predict_test))
 
 
-def perf_measure(y_actual, y_hat):
+def get_measure(y_actual, y_hat):
     TP = 0
     FP = 0
     TN = 0
     FN = 0
     for i in range(len(y_hat)):
-        if y_actual[i]==y_hat[i]==1:
+        if y_actual[i] == y_hat[i] == 1:
             TP += 1
         if y_hat[i] == 1 and y_actual[i] != y_hat[i]:
             FP += 1
@@ -80,29 +79,14 @@ def perf_measure(y_actual, y_hat):
             TN += 1
         if y_hat[i] == 0 and y_actual[i] != y_hat[i]:
             FN += 1
-    return TP, FP, TN, FN
+    Se = TP / (TP + FN)
+    Sp = TN / (TN + FP)
+    PPV = TP / (TP + FP)
+    ACC = (TP + TN) / (TP + FP + FN + TN)
+    return Se, Sp, PPV, ACC
 
 
-print(confusion_matrix(y_test, predict_test))
-print(classification_report(y_test, predict_test))
-
-FP = confusion_matrix(y_test, predict_test).sum(axis=0) - np.diag(confusion_matrix(y_test, predict_test))
-FN = confusion_matrix(y_test, predict_test).sum(axis=1) - np.diag(confusion_matrix(y_test, predict_test))
-TP = np.diag(confusion_matrix(y_test, predict_test))
-TN = confusion_matrix(y_test, predict_test).sum() - (FP + FN + TP)
-
-
-x = perf_measure(y_train, predict_train)
-Se1 = x[0]/(x[0]+x[3])
-Sp1 = x[2]/(x[2]+x[1])
-print(x, Se1, Sp1)
-
-Se = TP/(TP+FN)
-Sp = TN/(TN+FP)
-PPV = TP/(TP+FP)
-ACC = (TP+TN)/(TP+FP+FN+TN)
-print(Se, Sp, PPV, ACC)
-
-
-
-
+loaded = load_data("dataSepsis.csv")
+notnan = erase_nan(loaded[0])
+scaling = scale_data(notnan, loaded[1], loaded[2])
+hrk_hrk = neural_network(scaling)
